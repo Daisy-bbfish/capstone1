@@ -1,0 +1,295 @@
+---
+title: "Capstone Milestone: Exploratory Data Analysis"
+author: "Daisy Wu"
+date: "2018/5/17"
+output: html_document
+---
+
+```{r}
+library(knitr)
+knitr::opts_chunk$set(cache=FALSE,echo=TRUE, warning = FALSE)
+```
+
+## Summary
+This document is part of my Data Science Specialisation Capstone where I am looking at predictive test. Mobile phones, for instance, present you with three options of words, for you to select, when writing a text.
+
+The capstone project goal is to build a predictive text product running with my own predictive text algorithm. In order to do this I will rely on three files with text from Tweeter, Blogs and News in order to gain knowledge on the strcuture of the data.
+
+This milestone has the aim of demonstrating my capability of working with the data by carying out an exploratory data analysis. Statistics on the data files will be collected and preliminary graphs displayed.
+
+## Getting Data
+The data consist of a zip file containing four folders. The analysis presented here is with the trhee files in the en_US folder. The data can be downloaded here
+
+First we load the data into three different variables:
+
+```{r}
+#setwd("/Volumes/Daisy mac/datascience/DS10-W3/milestone-Exploratory Data Analysis and Modeling/final/en_US")
+
+library(tm)
+library(ggplot2)
+library(RWeka)
+```
+
+Getting data
+```{r}
+set.seed(69)  # Set seed for repeatability
+
+con <- file("en_US.news.txt", "r")
+news = readLines(con, encoding = "UTF-8")
+close(con)
+
+con <- file("en_US.blogs.txt", "r")
+blogs = readLines(con, encoding = "UTF-8")
+close(con)
+
+con <- file("en_US.twitter.txt", "r")
+twitter = readLines(con, encoding = "UTF-8")
+close(con)
+```
+
+## Exploratory Data Analysis
+In this section I explore some characteristics of the data files such as file size, number of lines, number of words, number of characters. In order to explore the data further I created three sample corpus, one for each original file. Using these data I collect statistics of frequencies for n-grams for each sample file.
+
+### File Characteristics
+
+Calculating data file statistics.
+Here is table of statistics for the three different data files.
+```{r}
+library(stringi)
+words_per_source=sapply(list(blogs,news,twitter),function(x) summary(stri_count_words(x))[c('Min.','Mean','Max.')])
+rownames(words_per_source)=c('Min','Mean','Max')
+stats=data.frame(
+  Dataset=c("blogs","news","twitter"),      
+  t(rbind(
+  sapply(list(blogs,news,twitter),stri_stats_general)[c('Lines','Chars'),],
+  Words=sapply(list(blogs,news,twitter),stri_stats_latex)['Words',],
+  words_per_source)
+))
+stats
+```
+
+## Creating a Corpus
+Due to the size of the data files we will create a corpus containing 10000 lines for each of the data files.
+
+Function to create a corpus including 5000 lines of each file:
+```{r}
+# A function to Create a corpus Inputs a textfile name
+# Converts it into a corpus via the VCorpus method
+CreateCorpus <- function(FileName) {
+    sample_corpus <- sample(FileName, 5000)
+    vecSource = VectorSource(sample_corpus)
+    corpus = VCorpus(vecSource)
+    return(corpus)
+}
+```
+
+Function to clean corpus by:
+Removing stop words
+Removing punctuation
+Removing numbers
+Removing profanity (using a list of “[banned words]”(http://www.bannedwordlist.com/lists/swearWords.txt))
+Remove non ASCII characters
+
+```{r}
+# A function to Clean a corpus Inputs a corpus Outputs a
+# corpus with removewords, remove punctuation, removenumbers
+profanity <- readLines("http://www.bannedwordlist.com/lists/swearWords.txt")
+CleanCorpus <- function(CorpusName) {
+    corpus.ng = tm_map(CorpusName, removeWords, c(stopwords(), 
+        "s", "ve"))
+    corpus.ng = tm_map(corpus.ng, removePunctuation)
+    corpus.ng = tm_map(corpus.ng, removeNumbers)
+    corpus.ng = tm_map(corpus.ng, removeWords, profanity)
+    RemoveNonASCII = function(x) gsub("[^ -~]", "", x)
+    corpus.ng = tm_map(corpus.ng, content_transformer(RemoveNonASCII))
+    
+    return(corpus.ng)
+}
+```
+
+Function to perform unigrams:
+```{r}
+CreateUnigram <- function(CorpusName) {
+    UnigramTokenizer <- function(x) NGramTokenizer(x, Weka_control(min = 1, 
+        max = 1))
+    tdm.unigram = TermDocumentMatrix(CorpusName, control = list(tokenize = UnigramTokenizer))
+    return(tdm.unigram)
+}
+```
+
+Function to perform bigrams:
+```{r}
+CreateBigrams <- function(CorpusName) {
+    BigramTokenizer <- function(x) NGramTokenizer(x, Weka_control(min = 2, 
+        max = 2))
+    tdm.bigram = TermDocumentMatrix(CorpusName, control = list(tokenize = BigramTokenizer))
+    return(tdm.bigram)
+}
+```
+
+Function to perform trigrams
+```{r}
+CreateTrigrams <- function(CorpusName) {
+    TrigramTokenizer <- function(x) NGramTokenizer(x, Weka_control(min = 3, 
+        max = 3))
+    tdm.trigram = TermDocumentMatrix(CorpusName, control = list(tokenize = TrigramTokenizer))
+    return(tdm.trigram)
+}
+```
+
+Function to sort frequency of n-grams by decreasing order
+```{r}
+SortFreq <- function(tdm) {
+    freq = sort(rowSums(as.matrix(tdm)), decreasing = TRUE)
+    freq.df = data.frame(word = names(freq), freq = freq)
+    return(freq.df)
+}
+```
+### Exploring patterns
+In this section I use the functions created for calculating and sorting n-grams on the sample corpuses.
+
+The n-grams for the blogs sample are:
+```{r}
+corpus.blogs = CreateCorpus(blogs)
+corpus.blogs = CleanCorpus(corpus.blogs)
+# Create Unigrams for blogs
+blogs.tdm.unigram = CreateUnigram(corpus.blogs)
+blogs.df.unigram = SortFreq(blogs.tdm.unigram)
+head(blogs.df.unigram, 5)
+```
+
+```{r}
+# Create Bigrams for blogs
+blogs.tdm.bigram = CreateBigrams(corpus.blogs)
+blogs.df.bigram = SortFreq(blogs.tdm.bigram)
+head(blogs.df.bigram, 5)
+```
+
+```{r}
+# Create Trigrams for blogs
+blogs.tdm.trigram = CreateTrigrams(corpus.blogs)
+blogs.df.trigram = SortFreq(blogs.tdm.trigram)
+head(blogs.df.trigram, 5)
+```
+
+The n-grams for the twitter sample are:
+```{r}
+corpus.twitter = CreateCorpus(twitter)
+corpus.twitter = CleanCorpus(corpus.twitter)
+# Create Unigrams for twitter
+twitter.tdm.unigram = CreateUnigram(corpus.twitter)
+twitter.df.unigram = SortFreq(twitter.tdm.unigram)
+head(twitter.df.unigram, 5)
+```
+```{r}
+# Create Bigrams for twitter
+twitter.tdm.bigram = CreateBigrams(corpus.twitter)
+twitter.df.bigram = SortFreq(twitter.tdm.bigram)
+head(twitter.df.bigram, 5)
+```
+```{r}
+# Create Trigrams for twitter
+twitter.tdm.trigram = CreateTrigrams(corpus.twitter)
+twitter.df.trigram = SortFreq(twitter.tdm.trigram)
+head(twitter.df.trigram, 5)
+```
+
+The n-grams for the news sample are:
+```{r}
+corpus.news = CreateCorpus(news)
+corpus.news = CleanCorpus(corpus.news)
+# Create Unigrams for news
+news.tdm.unigram = CreateUnigram(corpus.news)
+news.df.unigram = SortFreq(news.tdm.unigram)
+head(news.df.unigram, 5)
+```
+```{r}
+# Create Bigrams for news
+news.tdm.bigram = CreateBigrams(corpus.news)
+news.df.bigram = SortFreq(news.tdm.bigram)
+head(news.df.bigram, 5)
+```
+
+```{r}
+# Create Trigrams for news
+news.tdm.trigram = CreateTrigrams(corpus.news)
+news.df.trigram = SortFreq(news.tdm.trigram)
+head(news.df.trigram, 5)
+```
+
+### Plots
+In this section I built some “pretty” exploratory graphs to visualise and compare the n-grams of the three samples. For the unigrams:
+
+```{r}
+library(gridExtra)
+p1 = ggplot(head(blogs.df.unigram, 15), aes(reorder(word, freq), 
+    freq)) + geom_bar(stat = "identity", fill = "blue") + coord_flip() + 
+    xlab("Unigrams") + ylab("Frequency") + ggtitle("Blogs") + 
+    theme_bw()
+
+p2 = ggplot(head(twitter.df.unigram, 15), aes(reorder(word, freq), 
+    freq)) + geom_bar(stat = "identity", fill = "blue") + coord_flip() + 
+    xlab("Unigrams") + ylab("Frequency") + ggtitle("Twitter") + 
+    theme_bw()
+
+p3 = ggplot(head(news.df.unigram, 15), aes(reorder(word, freq), 
+    freq)) + geom_bar(stat = "identity", fill = "blue") + coord_flip() + 
+    xlab("Unigrams") + ylab("Frequency") + ggtitle("News") + 
+    theme_bw()
+
+
+grid.arrange(p1, p2, p3, nrow = 1)
+```
+
+For the bigrams:
+```{r}
+p1 = ggplot(head(blogs.df.bigram, 15), aes(reorder(word, freq), 
+    freq)) + geom_bar(stat = "identity", fill = "blue") + coord_flip() + 
+    xlab("Bigrams") + ylab("Frequency") + ggtitle("Blogs") + 
+    theme_bw()
+
+p2 = ggplot(head(twitter.df.bigram, 15), aes(reorder(word, freq), 
+    freq)) + geom_bar(stat = "identity", fill = "blue") + coord_flip() + 
+    xlab("Bigrams") + ylab("Frequency") + ggtitle("Twitter") + 
+    theme_bw()
+
+p3 = ggplot(head(news.df.bigram, 15), aes(reorder(word, freq), 
+    freq)) + geom_bar(stat = "identity", fill = "blue") + coord_flip() + 
+    xlab("Bigrams") + ylab("Frequency") + ggtitle("News") + theme_bw()
+
+
+grid.arrange(p1, p2, p3, nrow = 1)
+```
+
+For the Trigrams:
+```{r}
+p1 = ggplot(head(blogs.df.trigram, 15), aes(reorder(word, freq), 
+    freq)) + geom_bar(stat = "identity", fill = "blue") + coord_flip() + 
+    xlab("Trigrams") + ylab("Frequency") + ggtitle("Blogs") + 
+    theme_bw()
+
+p2 = ggplot(head(twitter.df.trigram, 15), aes(reorder(word, freq), 
+    freq)) + geom_bar(stat = "identity", fill = "blue") + coord_flip() + 
+    xlab("Trigrams") + ylab("Frequency") + ggtitle("Twitter") + 
+    theme_bw()
+
+p3 = ggplot(head(news.df.trigram, 15), aes(reorder(word, freq), 
+    freq)) + geom_bar(stat = "identity", fill = "blue") + coord_flip() + 
+    xlab("Trigrams") + ylab("Frequency") + ggtitle("News") + 
+    theme_bw()
+
+grid.arrange(p1, p2, p3, nrow = 1)
+```
+
+
+## Conclusions and Next Step
+
+An EDA was carryied out with the data provided for the Capstone of the Data Science Specialisation. The data consisted on three different text files containing text from blogs, news and twitter. Statistics for the files were calculated. The blogs data file was the biggest in size containing ‘r blogs_size’ MB; the twitter file was the smalles with 159.364069 MB. However, the tweeter file had the highest number of lines (2360148 ). The highest number of characters were in the blogs file and the longest line were in the blogs line. Tweets had a longest line of 140, which is to be expected by their definition.
+
+Three different sample corpus were created in order to make an exploratory data analysis viable. The corupses were cleaned for profanity words, punctuation, numbers and non ASCII characters. N-grams (uni, bi, tri) were created for each of the three samples. There seem to be common unigram words in the lists of 15 top unigrams between the three sample corpora. Tweets mention more feelings like happy and love.
+
+Bigrams between blogs and twitter seem to be quite similar with bigrams such as “i” plus a verb e.g. “i know”, “i think”, “i want”, “i love”, “i will”, etc. The bi-grams for news are quiet different they contain names of cities e.g. “san francisco”, “new jersey”, “st louis” and places “white house”.
+
+The pattern for blogs and tweets where first is the pronoun “i” followed by a verb is repeated for trigrams. Trigrams in news include “president barack obma”, “the last time” and oddly “just pig about”.
+
+Further work will be carryied out to create a predictive model for text writing application. The model will incorporate knowledge of the structure of the data as well as some linguistics.
